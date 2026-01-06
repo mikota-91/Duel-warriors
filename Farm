@@ -1,8 +1,8 @@
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
-   Name = "Duel Warriors: Optimized Hopper v20",
-   LoadingTitle = "Đang cấu hình logic tìm phòng...",
+   Name = "Duel Warriors: Sync System v21",
+   LoadingTitle = "Đang tối ưu hóa hệ thống...",
    ConfigurationSaving = { Enabled = false }
 })
 
@@ -14,15 +14,16 @@ local autoWin = false
 local autoLose = false
 local autoClearMVP = false
 local opponentName = ""
-local currentRoomIndex = 1 
+local currentRoomIndex = 1 -- Chỉ số phòng hiện tại để quét
 
--- [HỆ THỐNG ANTI-AFK - GIỮ NGUYÊN]
+-- [HỆ THỐNG ANTI-AFK]
 local VirtualUser = game:GetService("VirtualUser")
 game:GetService("Players").LocalPlayer.Idled:Connect(function()
     VirtualUser:CaptureController()
     VirtualUser:ClickButton2(Vector2.new())
 end)
 
+-- Hàm lấy danh sách người chơi
 local function getPlayerNames()
     local names = {}
     for _, player in pairs(game.Players:GetPlayers()) do
@@ -46,9 +47,9 @@ Tab:CreateButton({
 
 Tab:CreateSection("Chế độ Win/Lose")
 
--- 1. LOGIC CHO MÁY WIN (Tăng tốc để khớp với 0.5s của máy Lose)
+-- 1. LOGIC CHO MÁY WIN (Dynamic TP - Tăng tốc phản hồi)
 Tab:CreateToggle({
-   Name = "Auto Win (Instant Follow)",
+   Name = "Auto Win (Dynamic TP)",
    CurrentValue = false,
    Callback = function(Value)
       autoWin = Value
@@ -70,16 +71,16 @@ Tab:CreateToggle({
                           end
                       end
                   end
-                  task.wait(0.01)
+                  task.wait(0.1) -- Tăng tốc quét để khớp máy Lose
               end
           end)
       end
    end,
 })
 
--- 2. LOGIC CHO MÁY LOSE (Chỉ tinh chỉnh phần Tìm Phòng)
+-- 2. LOGIC CHO MÁY LOSE (Tinh chỉnh quét phòng 1-6 & Tạm dừng khi vào trận)
 Tab:CreateToggle({
-   Name = "Auto Lose (Sequential Hopping)",
+   Name = "Auto Lose (Sequential Scanning)",
    CurrentValue = false,
    Callback = function(Value)
       autoLose = Value
@@ -90,11 +91,11 @@ Tab:CreateToggle({
                   local lp = game.Players.LocalPlayer
                   if not lp.Character or not lp.Character:FindFirstChild("HumanoidRootPart") then task.wait(1) continue end
                   
-                  -- [TINH CHỈNH: QUY TRÌNH TÌM PHÒNG]
+                  -- BẮT ĐẦU QUY TRÌNH QUÉT PHÒNG TỊNH TIẾN
                   local group = workspace.Scene.Function.DuelEnter["1V1Group"..currentRoomIndex]
                   local skipRoom = false
                   
-                  -- Kiểm tra người lạ đứng gần cổng
+                  -- Kiểm tra người lạ đứng gần cổng (Bán kính 10m)
                   for _, p in pairs(game.Players:GetPlayers()) do
                       if p ~= lp and p.Name ~= opponentName and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
                           local pPos = p.Character.HumanoidRootPart.Position
@@ -106,38 +107,51 @@ Tab:CreateToggle({
                   end
 
                   if skipRoom then
-                      currentRoomIndex = (currentRoomIndex % 6) + 1
-                      task.wait(0.05)
+                      currentRoomIndex = (currentRoomIndex % 6) + 1 -- Chuyển sang phòng kế tiếp (1->6)
+                      task.wait(0.1)
                       continue
                   end
 
-                  -- Nhảy vào cổng
+                  -- Nhảy vào cổng chờ của phòng hiện tại
                   lp.Character.HumanoidRootPart.CFrame = group.TransPos2.CFrame
                   
-                  -- Kiểm tra 2s Timeout
-                  local startTime = tick()
-                  local entered = false
-                  while tick() - startTime < 0.6 do
-                      task.wait(0.05)
-                      if lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") then
-                          local floor = workspace.Map.MatchDuel.DuelArena["1V1No"..currentRoomIndex].Floor
-                          if (lp.Character.HumanoidRootPart.Position - floor.Position).Magnitude < 80 then
-                              entered = true
-                              break
+                  -- LOGIC QUÉT VÀ RESET (Giữ nguyên nội dung bạn gửi nhưng thêm cơ chế thoát vòng lặp quét)
+                  local function smartReset(index, groupPart)
+                      local floor = workspace.Map.MatchDuel.DuelArena["1V1No"..index].Floor
+                      local timeout = 0
+                      
+                      while autoLose do
+                          if lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") then
+                              local myPos = lp.Character.HumanoidRootPart.Position
+                              
+                              -- NẾU VÀO TRẬN (Chạm sàn đấu): NGỪNG TÌM PHÒNG
+                              if (myPos - floor.Position).Magnitude < 80 then
+                                  task.wait(0.5)
+                                  local hum = lp.Character:FindFirstChildOfClass("Humanoid")
+                                  if hum then hum.Health = 0 end
+                                  return "entered"
+                              end
+                              
+                              -- Nếu quá 0.5s tại cổng mà không vào trận -> Thoát để đổi phòng
+                              if timeout >= 0.6 then
+                                  return "hop"
+                              end
                           end
+                          
+                          task.wait(0.1)
+                          timeout = timeout + 0.1
                       end
                   end
 
-                  -- [GIỮ NGUYÊN: LOGIC RESET SAU KHI VÀO TRẬN]
-                  if entered then
-                      task.wait(0.2)
-                      local hum = lp.Character:FindFirstChildOfClass("Humanoid")
-                      if hum then hum.Health = 0 end
-                      
-                      task.wait(1.5)
+                  local result = smartReset(currentRoomIndex, group)
+
+                  if result == "entered" then
+                      -- ĐÃ VÀO TRẬN: Tạm dừng quy trình tìm phòng để thực hiện hiệp 2
+                      task.wait(2)
                       local char = lp.Character or lp.CharacterAdded:Wait()
-                      task.wait(1.2)
+                      task.wait(1.5)
                       
+                      -- Thực hiện hiệp 2 tại chính phòng đó
                       local floor = workspace.Map.MatchDuel.DuelArena["1V1No"..currentRoomIndex].Floor
                       local timeout2 = 0
                       repeat 
@@ -147,22 +161,23 @@ Tab:CreateToggle({
                       
                       local hum2 = lp.Character:FindFirstChildOfClass("Humanoid")
                       if hum2 then hum2.Health = 0 end
-                      task.wait(3)
+                      task.wait(4)
                   else
-                      -- Nếu quá 0.5s không vào được, nhảy sang index tiếp theo
+                      -- PHÒNG KHÔNG KHỚP (Kết quả "hop"): Tịnh tiến sang phòng tiếp theo
                       currentRoomIndex = (currentRoomIndex % 6) + 1
                   end
-                  
-                  task.wait(0.05)
+                  task.wait(0.1)
               end
           end)
       end
    end,
 })
 
--- [MISC - GIỮ NGUYÊN]
+-- [TAB MISC]
+MiscTab:CreateSection("Tiện ích & Tối ưu")
+
 MiscTab:CreateToggle({
-   Name = "Auto Clear MVP (30s)",
+   Name = "Safe Clear MVP Models",
    CurrentValue = false,
    Callback = function(Value)
       autoClearMVP = Value
@@ -173,13 +188,13 @@ MiscTab:CreateToggle({
                       local mvpPos = workspace.Scene.SafeIsland.DuelLobby.WinnerTable.MVPPos
                       for _, container in pairs(mvpPos:GetChildren()) do
                           for _, item in pairs(container:GetChildren()) do
-                              if not item:IsA("Camera") and not string.find(item.Name:lower(), "cam") then
+                              if item:IsA("Model") and item:FindFirstChildOfClass("Humanoid") then
                                   item:Destroy()
                               end
                           end
                       end
                   end)
-                  task.wait(30)
+                  task.wait(5)
               end
           end)
       end
