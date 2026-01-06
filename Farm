@@ -1,8 +1,8 @@
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
-   Name = "Duel Warriors: Sync System v6",
-   LoadingTitle = "Đang đồng bộ hóa hệ thống...",
+   Name = "Duel Warriors: Optimized Sync v9",
+   LoadingTitle = "Đang khởi tạo hệ thống tối ưu...",
    ConfigurationSaving = { Enabled = false }
 })
 
@@ -14,6 +14,7 @@ local autoWin = false
 local autoLose = false
 local autoClearMVP = false
 local opponentName = ""
+local winConnection = nil -- Lưu kết nối theo dõi Win
 
 -- [HỆ THỐNG ANTI-AFK]
 local VirtualUser = game:GetService("VirtualUser")
@@ -21,6 +22,20 @@ game:GetService("Players").LocalPlayer.Idled:Connect(function()
     VirtualUser:CaptureController()
     VirtualUser:ClickButton2(Vector2.new())
 end)
+
+-- Hàm xóa MVP (Chỉ gọi khi cần thiết)
+local function clearMVPModels()
+    pcall(function()
+        local mvpPos = workspace.Scene.SafeIsland.DuelLobby.WinnerTable.MVPPos
+        for _, container in pairs(mvpPos:GetChildren()) do
+            for _, item in pairs(container:GetChildren()) do
+                if not item:IsA("Camera") and not string.find(item.Name:lower(), "cam") then
+                    item:Destroy()
+                end
+            end
+        end
+    end)
+end
 
 -- Hàm lấy danh sách người chơi
 local function getPlayerNames()
@@ -35,6 +50,151 @@ end
 local PlayerDropdown = Tab:CreateDropdown({
    Name = "Chọn Đối Thủ (B)",
    Options = getPlayerNames(),
+   CurrentOption = {""},
+   Callback = function(Option) 
+       opponentName = Option[1] 
+       -- Reset kết nối khi đổi đối thủ
+       if winConnection then winConnection:Disconnect() end
+       
+       local opp = game.Players:FindFirstChild(opponentName)
+       if opp and opp:FindFirstChild("leaderstats") and opp.leaderstats:FindFirstChild("Wins") then
+           winConnection = opp.leaderstats.Wins.Changed:Connect(function()
+               if autoClearMVP then
+                   task.wait(1) -- Đợi model kịp spawn ra rồi mới xóa
+                   clearMVPModels()
+               end
+           end)
+       end
+   end,
+})
+
+Tab:CreateButton({
+   Name = "Làm mới Player",
+   Callback = function() PlayerDropdown:Set(getPlayerNames()) end,
+})
+
+-- 1. LOGIC CHO MÁY WIN (Dynamic TP)
+Tab:CreateToggle({
+   Name = "Auto Win (Dynamic TP)",
+   CurrentValue = false,
+   Callback = function(Value)
+      autoWin = Value
+      if Value then
+          autoLose = false
+          task.spawn(function()
+              while autoWin do
+                  local targetPlayer = game.Players:FindFirstChild(opponentName)
+                  if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                      local oppPos = targetPlayer.Character.HumanoidRootPart.Position
+                      for i = 1, 6 do
+                          local group = workspace.Scene.Function.DuelEnter["1V1Group"..i]
+                          if (oppPos - group.TransPos2.Position).Magnitude < 8 then
+                              game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame = group.TransPos1.CFrame
+                              break
+                          elseif (oppPos - group.TransPos1.Position).Magnitude < 8 then
+                              game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame = group.TransPos2.CFrame
+                              break
+                          end
+                      end
+                  end
+                  task.wait(1)
+              end
+          end)
+      end
+   end,
+})
+
+-- 2. LOGIC CHO MÁY LOSE (2 Rounds + Safe Reset)
+Tab:CreateToggle({
+   Name = "Auto Lose (2 Rounds + Safe Reset)",
+   CurrentValue = false,
+   Callback = function(Value)
+      autoLose = Value
+      if Value then
+          autoWin = false
+          task.spawn(function()
+              while autoLose do
+                  local lp = game.Players.LocalPlayer
+                  local bestGroupIndex = nil
+                  local bestGroupPart = nil
+                  
+                  for i = 1, 6 do
+                      local group = workspace.Scene.Function.DuelEnter["1V1Group"..i]
+                      local isBusy = false
+                      for _, p in pairs(game.Players:GetPlayers()) do
+                          if p ~= lp and p.Name ~= opponentName and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                              if (p.Character.HumanoidRootPart.Position - group.TransPos2.Position).Magnitude < 5 or 
+                                 (p.Character.HumanoidRootPart.Position - group.TransPos1.Position).Magnitude < 5 then
+                                  isBusy = true break
+                              end
+                          end
+                      end
+                      if not isBusy then bestGroupIndex = i bestGroupPart = group break end
+                  end
+
+                  if bestGroupIndex and lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") then
+                      lp.Character.HumanoidRootPart.CFrame = bestGroupPart.TransPos2.CFrame
+                      
+                      local function smartReset(index, groupPart)
+                          local floor = workspace.Map.MatchDuel.DuelArena["1V1No"..index].Floor
+                          local timeout = 0
+                          while autoLose do
+                              if lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") then
+                                  local myPos = lp.Character.HumanoidRootPart.Position
+                                  if (myPos - floor.Position).Magnitude < 80 then
+                                      task.wait(0.5)
+                                      if lp.Character:FindFirstChild("Humanoid") then lp.Character.Humanoid.Health = 0 end
+                                      return true
+                                  end
+                                  if timeout > 5 then
+                                      if (myPos - groupPart.TransPos2.Position).Magnitude < 10 or (myPos - groupPart.TransPos1.Position).Magnitude < 10 then
+                                          if lp.Character:FindFirstChild("Humanoid") then lp.Character.Humanoid.Health = 0 end
+                                          return true
+                                      end
+                                  end
+                              end
+                              task.wait(0.5)
+                              timeout = timeout + 0.5
+                              if timeout > 25 then return false end
+                          end
+                      end
+
+                      if smartReset(bestGroupIndex, bestGroupPart) then
+                          task.wait(2)
+                          local char = lp.Character or lp.CharacterAdded:Wait()
+                          task.wait(1.5)
+                          smartReset(bestGroupIndex, bestGroupPart)
+                      end
+                      task.wait(4)
+                  end
+                  task.wait(2)
+              end
+          end)
+      end
+   end,
+})
+
+-- [TAB MISC]
+MiscTab:CreateSection("Tiện ích & Tối ưu")
+
+MiscTab:CreateToggle({
+   Name = "Smart Clear MVP (On Win +1)",
+   CurrentValue = false,
+   Callback = function(Value)
+      autoClearMVP = Value
+   end,
+})
+
+MiscTab:CreateButton({ 
+    Name = "Destroy UI", 
+    Callback = function() 
+        autoWin = false 
+        autoLose = false 
+        autoClearMVP = false
+        if winConnection then winConnection:Disconnect() end
+        Rayfield:Destroy() 
+    end 
+})   Options = getPlayerNames(),
    CurrentOption = {""},
    Callback = function(Option) opponentName = Option[1] end,
 })
@@ -185,7 +345,7 @@ MiscTab:CreateToggle({
                           end
                       end
                   end)
-                  task.wait(5) -- Quét giãn cách để chống lag
+                  task.wait(10) -- Quét giãn cách để chống lag
               end
           end)
       end
