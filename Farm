@@ -1,8 +1,8 @@
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
-   Name = "Duel Warriors",
-   LoadingTitle = "Cimming by yoki",
+   Name = "Duel Warriors: Sync System v5",
+   LoadingTitle = "Đang tối ưu hóa hệ thống...",
    ConfigurationSaving = { Enabled = false }
 })
 
@@ -33,22 +33,22 @@ end
 
 -- [TAB CÀI ĐẶT]
 local PlayerDropdown = Tab:CreateDropdown({
-   Name = "Players",
+   Name = "Chọn Đối Thủ (B)",
    Options = getPlayerNames(),
    CurrentOption = {""},
    Callback = function(Option) opponentName = Option[1] end,
 })
 
 Tab:CreateButton({
-   Name = "Refresh Player",
+   Name = "Làm mới Player",
    Callback = function() PlayerDropdown:Set(getPlayerNames()) end,
 })
 
-Tab:CreateSection("Farm")
+Tab:CreateSection("Chế độ Win/Lose")
 
 -- 1. LOGIC CHO MÁY WIN (Dynamic TP)
 Tab:CreateToggle({
-   Name = "Auto Win",
+   Name = "Auto Win (Dynamic TP)",
    CurrentValue = false,
    Callback = function(Value)
       autoWin = Value
@@ -77,9 +77,9 @@ Tab:CreateToggle({
    end,
 })
 
--- 2. LOGIC CHO MÁY LOSE (Check Floor & 2 Rounds)
+-- 2. LOGIC CHO MÁY LOSE (Force Reset if TP Back)
 Tab:CreateToggle({
-   Name = "Auto Lose",
+   Name = "Auto Lose (2 Rounds + Safe Reset)",
    CurrentValue = false,
    Callback = function(Value)
       autoLose = Value
@@ -91,6 +91,7 @@ Tab:CreateToggle({
                   local bestGroupIndex = nil
                   local bestGroupPart = nil
                   
+                  -- Tìm phòng trống
                   for i = 1, 6 do
                       local group = workspace.Scene.Function.DuelEnter["1V1Group"..i]
                       local isBusy = false
@@ -108,28 +109,46 @@ Tab:CreateToggle({
                   if bestGroupIndex and lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") then
                       lp.Character.HumanoidRootPart.CFrame = bestGroupPart.TransPos2.CFrame
                       
-                      local function waitForFloor(index)
+                      -- Hàm kiểm tra trạng thái và Reset
+                      local function smartReset(index, groupPart)
                           local floor = workspace.Map.MatchDuel.DuelArena["1V1No"..index].Floor
                           local timeout = 0
+                          local enteredArena = false
+                          
                           while autoLose do
                               if lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") then
-                                  if (lp.Character.HumanoidRootPart.Position - floor.Position).Magnitude < 80 then return true end
+                                  local myPos = lp.Character.HumanoidRootPart.Position
+                                  
+                                  -- Nếu chạm sàn đấu -> OK
+                                  if (myPos - floor.Position).Magnitude < 80 then
+                                      enteredArena = true
+                                      task.wait(0.5)
+                                      lp.Character.Humanoid.Health = 0
+                                      return true
+                                  end
+                                  
+                                  -- LOGIC MỚI: Nếu đã từng vào trận (hoặc đợi quá 5s) mà lại thấy đứng ở cửa chờ -> Force Reset
+                                  if timeout > 5 then
+                                      if (myPos - groupPart.TransPos2.Position).Magnitude < 10 or (myPos - groupPart.TransPos1.Position).Magnitude < 10 then
+                                          lp.Character.Humanoid.Health = 0
+                                          return true
+                                      end
+                                  end
                               end
+                              
                               task.wait(0.5)
                               timeout = timeout + 0.5
-                              if timeout > 30 then return false end
+                              if timeout > 25 then return false end -- Thoát nếu quá lâu không có biến chuyển
                           end
                       end
 
-                      if waitForFloor(bestGroupIndex) then
-                          task.wait(0.5)
-                          if lp.Character:FindFirstChild("Humanoid") then lp.Character.Humanoid.Health = 0 end
-                          
-                          local char = lp.CharacterAdded:Wait()
-                          if waitForFloor(bestGroupIndex) then
-                              task.wait(1)
-                              if char:FindFirstChild("Humanoid") then char.Humanoid.Health = 0 end
-                          end
+                      -- Hiệp 1
+                      if smartReset(bestGroupIndex, bestGroupPart) then
+                          -- Hiệp 2
+                          task.wait(2)
+                          local char = lp.Character or lp.CharacterAdded:Wait()
+                          task.wait(1)
+                          smartReset(bestGroupIndex, bestGroupPart)
                       end
                       task.wait(4)
                   end
@@ -141,13 +160,10 @@ Tab:CreateToggle({
 })
 
 -- [TAB MISC]
-MiscTab:CreateSection("Misc & Anti-AFK")
+MiscTab:CreateSection("Tiện ích & Tối ưu")
 
-MiscTab:CreateLabel("Anti-AFK: Alway On")
-
--- Chức năng xóa toàn bộ Model xuất hiện trong MVPPos
 MiscTab:CreateToggle({
-   Name = "Auto Clear All MVP Models",
+   Name = "Safe Clear MVP Models",
    CurrentValue = false,
    Callback = function(Value)
       autoClearMVP = Value
@@ -158,11 +174,13 @@ MiscTab:CreateToggle({
                       local mvpPos = workspace.Scene.SafeIsland.DuelLobby.WinnerTable.MVPPos
                       for _, container in pairs(mvpPos:GetChildren()) do
                           for _, item in pairs(container:GetChildren()) do
-                              item:Destroy()
+                              if item:IsA("Model") and item:FindFirstChildOfClass("Humanoid") then
+                                  item:Destroy()
+                              end
                           end
                       end
                   end)
-                  task.wait(1.5)
+                  task.wait(5)
               end
           end)
       end
