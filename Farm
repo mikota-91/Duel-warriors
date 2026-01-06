@@ -128,7 +128,7 @@ Tab:CreateToggle({
                   local entered = false
                   
                   -- Đợi tối đa 0.6s để game khớp trận
-                  while tick() - startTime < 0.6 do
+                  while tick() - startTime < 2 do
                       task.wait(0.05)
                       if lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") then
                           local floor = workspace.Map.MatchDuel.DuelArena["1V1No"..currentRoomIndex].Floor
