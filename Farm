@@ -1,8 +1,8 @@
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
-   Name = "Duel Warriors: Anti-Stranger Sync v19",
-   LoadingTitle = "Đang tối ưu logic né người lạ...",
+   Name = "Duel Warriors: Optimized Hopper v20",
+   LoadingTitle = "Đang cấu hình logic tìm phòng...",
    ConfigurationSaving = { Enabled = false }
 })
 
@@ -16,7 +16,7 @@ local autoClearMVP = false
 local opponentName = ""
 local currentRoomIndex = 1 
 
--- [HỆ THỐNG ANTI-AFK]
+-- [HỆ THỐNG ANTI-AFK - GIỮ NGUYÊN]
 local VirtualUser = game:GetService("VirtualUser")
 game:GetService("Players").LocalPlayer.Idled:Connect(function()
     VirtualUser:CaptureController()
@@ -46,7 +46,7 @@ Tab:CreateButton({
 
 Tab:CreateSection("Chế độ Win/Lose")
 
--- 1. LOGIC CHO MÁY WIN (Siêu tốc 0.01s)
+-- 1. LOGIC CHO MÁY WIN (Tăng tốc để khớp với 0.5s của máy Lose)
 Tab:CreateToggle({
    Name = "Auto Win (Instant Follow)",
    CurrentValue = false,
@@ -77,9 +77,9 @@ Tab:CreateToggle({
    end,
 })
 
--- 2. LOGIC CHO MÁY LOSE (Né người lạ + Quét 6 phòng)
+-- 2. LOGIC CHO MÁY LOSE (Chỉ tinh chỉnh phần Tìm Phòng)
 Tab:CreateToggle({
-   Name = "Auto Lose (Stranger Avoidance)",
+   Name = "Auto Lose (Sequential Hopping)",
    CurrentValue = false,
    Callback = function(Value)
       autoLose = Value
@@ -90,45 +90,34 @@ Tab:CreateToggle({
                   local lp = game.Players.LocalPlayer
                   if not lp.Character or not lp.Character:FindFirstChild("HumanoidRootPart") then task.wait(1) continue end
                   
-                  -- Chọn phòng theo thứ tự 1-6
+                  -- [TINH CHỈNH: QUY TRÌNH TÌM PHÒNG]
                   local group = workspace.Scene.Function.DuelEnter["1V1Group"..currentRoomIndex]
+                  local skipRoom = false
                   
-                  -- KIỂM TRA NGƯỜI LẠ (Stranger Detection)
-                  local strangerDetected = false
+                  -- Kiểm tra người lạ đứng gần cổng
                   for _, p in pairs(game.Players:GetPlayers()) do
-                      -- Nếu player không phải là mình VÀ không phải máy Win
-                      if p ~= lp and p.Name ~= opponentName then
-                          if p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-                              local pPos = p.Character.HumanoidRootPart.Position
-                              -- Quét bán kính 10m quanh cả 2 cổng vào của Group hiện tại
-                              local dist1 = (pPos - group.TransPos1.Position).Magnitude
-                              local dist2 = (pPos - group.TransPos2.Position).Magnitude
-                              
-                              if dist1 < 10 or dist2 < 10 then
-                                  strangerDetected = true
-                                  break
-                              end
+                      if p ~= lp and p.Name ~= opponentName and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                          local pPos = p.Character.HumanoidRootPart.Position
+                          if (pPos - group.TransPos1.Position).Magnitude < 10 or (pPos - group.TransPos2.Position).Magnitude < 10 then
+                              skipRoom = true
+                              break
                           end
                       end
                   end
 
-                  if strangerDetected then
-                      -- Nếu thấy người lạ, nhảy sang Index tiếp theo ngay mà không thèm TP tới
-                      print("Phát hiện người lạ tại phòng "..currentRoomIndex..", đang bỏ qua...")
-                      currentRoomIndex = currentRoomIndex + 1
-                      if currentRoomIndex > 6 then currentRoomIndex = 1 end
+                  if skipRoom then
+                      currentRoomIndex = (currentRoomIndex % 6) + 1
                       task.wait(0.05)
                       continue
                   end
 
-                  -- NẾU PHÒNG AN TOÀN: NHẢY VÀO
+                  -- Nhảy vào cổng
                   lp.Character.HumanoidRootPart.CFrame = group.TransPos2.CFrame
                   
+                  -- Kiểm tra 2s Timeout
                   local startTime = tick()
                   local entered = false
-                  
-                  -- Đợi tối đa 0.6s để game khớp trận
-                  while tick() - startTime < 2 do
+                  while tick() - startTime < 0.6 do
                       task.wait(0.05)
                       if lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") then
                           local floor = workspace.Map.MatchDuel.DuelArena["1V1No"..currentRoomIndex].Floor
@@ -139,8 +128,8 @@ Tab:CreateToggle({
                       end
                   end
 
+                  -- [GIỮ NGUYÊN: LOGIC RESET SAU KHI VÀO TRẬN]
                   if entered then
-                      -- TRẬN ĐẤU BẮT ĐẦU: Reset 2 hiệp
                       task.wait(0.2)
                       local hum = lp.Character:FindFirstChildOfClass("Humanoid")
                       if hum then hum.Health = 0 end
@@ -160,9 +149,8 @@ Tab:CreateToggle({
                       if hum2 then hum2.Health = 0 end
                       task.wait(3)
                   else
-                      -- KHÔNG KHỚP TRẬN SAU 0.6S: Đổi phòng
-                      currentRoomIndex = currentRoomIndex + 1
-                      if currentRoomIndex > 6 then currentRoomIndex = 1 end
+                      -- Nếu quá 0.5s không vào được, nhảy sang index tiếp theo
+                      currentRoomIndex = (currentRoomIndex % 6) + 1
                   end
                   
                   task.wait(0.05)
@@ -172,7 +160,7 @@ Tab:CreateToggle({
    end,
 })
 
--- [TAB MISC]
+-- [MISC - GIỮ NGUYÊN]
 MiscTab:CreateToggle({
    Name = "Auto Clear MVP (30s)",
    CurrentValue = false,
