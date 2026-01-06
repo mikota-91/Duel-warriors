@@ -1,0 +1,180 @@
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local Window = Rayfield:CreateWindow({
+   Name = "Duel Warriors",
+   LoadingTitle = "Cimming by yoki",
+   ConfigurationSaving = { Enabled = false }
+})
+
+local Tab = Window:CreateTab("Auto Duel", 4483362458)
+local MiscTab = Window:CreateTab("Misc", 4483345909)
+
+-- Variables
+local autoWin = false
+local autoLose = false
+local autoClearMVP = false
+local opponentName = ""
+
+-- [HỆ THỐNG ANTI-AFK]
+local VirtualUser = game:GetService("VirtualUser")
+game:GetService("Players").LocalPlayer.Idled:Connect(function()
+    VirtualUser:CaptureController()
+    VirtualUser:ClickButton2(Vector2.new())
+end)
+
+-- Hàm lấy danh sách người chơi
+local function getPlayerNames()
+    local names = {}
+    for _, player in pairs(game.Players:GetPlayers()) do
+        if player ~= game.Players.LocalPlayer then table.insert(names, player.Name) end
+    end
+    return names
+end
+
+-- [TAB CÀI ĐẶT]
+local PlayerDropdown = Tab:CreateDropdown({
+   Name = "Players",
+   Options = getPlayerNames(),
+   CurrentOption = {""},
+   Callback = function(Option) opponentName = Option[1] end,
+})
+
+Tab:CreateButton({
+   Name = "Refresh Player",
+   Callback = function() PlayerDropdown:Set(getPlayerNames()) end,
+})
+
+Tab:CreateSection("Farm")
+
+-- 1. LOGIC CHO MÁY WIN (Dynamic TP)
+Tab:CreateToggle({
+   Name = "Auto Win",
+   CurrentValue = false,
+   Callback = function(Value)
+      autoWin = Value
+      if Value then
+          autoLose = false
+          task.spawn(function()
+              while autoWin do
+                  local targetPlayer = game.Players:FindFirstChild(opponentName)
+                  if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                      local oppPos = targetPlayer.Character.HumanoidRootPart.Position
+                      for i = 1, 6 do
+                          local group = workspace.Scene.Function.DuelEnter["1V1Group"..i]
+                          if (oppPos - group.TransPos2.Position).Magnitude < 8 then
+                              game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame = group.TransPos1.CFrame
+                              break
+                          elseif (oppPos - group.TransPos1.Position).Magnitude < 8 then
+                              game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame = group.TransPos2.CFrame
+                              break
+                          end
+                      end
+                  end
+                  task.wait(1)
+              end
+          end)
+      end
+   end,
+})
+
+-- 2. LOGIC CHO MÁY LOSE (Check Floor & 2 Rounds)
+Tab:CreateToggle({
+   Name = "Auto Lose",
+   CurrentValue = false,
+   Callback = function(Value)
+      autoLose = Value
+      if Value then
+          autoWin = false
+          task.spawn(function()
+              while autoLose do
+                  local lp = game.Players.LocalPlayer
+                  local bestGroupIndex = nil
+                  local bestGroupPart = nil
+                  
+                  for i = 1, 6 do
+                      local group = workspace.Scene.Function.DuelEnter["1V1Group"..i]
+                      local isBusy = false
+                      for _, p in pairs(game.Players:GetPlayers()) do
+                          if p ~= lp and p.Name ~= opponentName and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                              if (p.Character.HumanoidRootPart.Position - group.TransPos2.Position).Magnitude < 5 or 
+                                 (p.Character.HumanoidRootPart.Position - group.TransPos1.Position).Magnitude < 5 then
+                                  isBusy = true break
+                              end
+                          end
+                      end
+                      if not isBusy then bestGroupIndex = i bestGroupPart = group break end
+                  end
+
+                  if bestGroupIndex and lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") then
+                      lp.Character.HumanoidRootPart.CFrame = bestGroupPart.TransPos2.CFrame
+                      
+                      local function waitForFloor(index)
+                          local floor = workspace.Map.MatchDuel.DuelArena["1V1No"..index].Floor
+                          local timeout = 0
+                          while autoLose do
+                              if lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") then
+                                  if (lp.Character.HumanoidRootPart.Position - floor.Position).Magnitude < 80 then return true end
+                              end
+                              task.wait(0.5)
+                              timeout = timeout + 0.5
+                              if timeout > 30 then return false end
+                          end
+                      end
+
+                      if waitForFloor(bestGroupIndex) then
+                          task.wait(0.5)
+                          if lp.Character:FindFirstChild("Humanoid") then lp.Character.Humanoid.Health = 0 end
+                          
+                          local char = lp.CharacterAdded:Wait()
+                          if waitForFloor(bestGroupIndex) then
+                              task.wait(1)
+                              if char:FindFirstChild("Humanoid") then char.Humanoid.Health = 0 end
+                          end
+                      end
+                      task.wait(4)
+                  end
+                  task.wait(2)
+              end
+          end)
+      end
+   end,
+})
+
+-- [TAB MISC]
+MiscTab:CreateSection("Misc & Anti-AFK")
+
+MiscTab:CreateLabel("Anti-AFK: Alway On")
+
+-- Chức năng xóa toàn bộ Model xuất hiện trong MVPPos
+MiscTab:CreateToggle({
+   Name = "Auto Clear All MVP Models",
+   CurrentValue = false,
+   Callback = function(Value)
+      autoClearMVP = Value
+      if Value then
+          task.spawn(function()
+              while autoClearMVP do
+                  pcall(function()
+                      local mvpPos = workspace.Scene.SafeIsland.DuelLobby.WinnerTable.MVPPos
+                      for _, container in pairs(mvpPos:GetChildren()) do
+                          for _, item in pairs(container:GetChildren()) do
+                              item:Destroy()
+                          end
+                      end
+                  end)
+                  task.wait(1.5)
+              end
+          end)
+      end
+   end,
+})
+
+MiscTab:CreateButton({ 
+    Name = "Destroy UI", 
+    Callback = function() 
+        autoWin = false 
+        autoLose = false 
+        autoClearMVP = false
+        Rayfield:Destroy() 
+    end 
+})
