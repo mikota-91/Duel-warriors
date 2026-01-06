@@ -1,8 +1,8 @@
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
-   Name = "Duel Warriors: Sync System v5",
-   LoadingTitle = "Đang tối ưu hóa hệ thống...",
+   Name = "Duel Warriors: Sync System v6",
+   LoadingTitle = "Đang đồng bộ hóa hệ thống...",
    ConfigurationSaving = { Enabled = false }
 })
 
@@ -46,7 +46,7 @@ Tab:CreateButton({
 
 Tab:CreateSection("Chế độ Win/Lose")
 
--- 1. LOGIC CHO MÁY WIN (Dynamic TP)
+-- 1. LOGIC CHO MÁY WIN (Dynamic TP - Đứng chỗ còn trống)
 Tab:CreateToggle({
    Name = "Auto Win (Dynamic TP)",
    CurrentValue = false,
@@ -77,7 +77,7 @@ Tab:CreateToggle({
    end,
 })
 
--- 2. LOGIC CHO MÁY LOSE (Force Reset if TP Back)
+-- 2. LOGIC CHO MÁY LOSE (Smart Reset + Force Reset)
 Tab:CreateToggle({
    Name = "Auto Lose (2 Rounds + Safe Reset)",
    CurrentValue = false,
@@ -107,30 +107,33 @@ Tab:CreateToggle({
                   end
 
                   if bestGroupIndex and lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") then
+                      -- Teleport vào vị trí cửa chờ
                       lp.Character.HumanoidRootPart.CFrame = bestGroupPart.TransPos2.CFrame
                       
-                      -- Hàm kiểm tra trạng thái và Reset
+                      -- Hàm kiểm tra sàn đấu và tự động Reset
                       local function smartReset(index, groupPart)
                           local floor = workspace.Map.MatchDuel.DuelArena["1V1No"..index].Floor
                           local timeout = 0
-                          local enteredArena = false
                           
                           while autoLose do
                               if lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") then
                                   local myPos = lp.Character.HumanoidRootPart.Position
                                   
-                                  -- Nếu chạm sàn đấu -> OK
+                                  -- TRƯỜNG HỢP 1: Đã vào sàn đấu thành công
                                   if (myPos - floor.Position).Magnitude < 80 then
-                                      enteredArena = true
                                       task.wait(0.5)
-                                      lp.Character.Humanoid.Health = 0
+                                      if lp.Character:FindFirstChild("Humanoid") then
+                                          lp.Character.Humanoid.Health = 0
+                                      end
                                       return true
                                   end
                                   
-                                  -- LOGIC MỚI: Nếu đã từng vào trận (hoặc đợi quá 5s) mà lại thấy đứng ở cửa chờ -> Force Reset
+                                  -- TRƯỜNG HỢP 2: Bị kẹt hoặc bị văng ngược lại cửa chờ (Sau 5 giây chờ)
                                   if timeout > 5 then
                                       if (myPos - groupPart.TransPos2.Position).Magnitude < 10 or (myPos - groupPart.TransPos1.Position).Magnitude < 10 then
-                                          lp.Character.Humanoid.Health = 0
+                                          if lp.Character:FindFirstChild("Humanoid") then
+                                              lp.Character.Humanoid.Health = 0
+                                          end
                                           return true
                                       end
                                   end
@@ -138,16 +141,16 @@ Tab:CreateToggle({
                               
                               task.wait(0.5)
                               timeout = timeout + 0.5
-                              if timeout > 25 then return false end -- Thoát nếu quá lâu không có biến chuyển
+                              if timeout > 25 then return false end -- Chống kẹt vĩnh viễn
                           end
                       end
 
-                      -- Hiệp 1
+                      -- Thực hiện Hiệp 1
                       if smartReset(bestGroupIndex, bestGroupPart) then
-                          -- Hiệp 2
+                          -- Thực hiện Hiệp 2
                           task.wait(2)
                           local char = lp.Character or lp.CharacterAdded:Wait()
-                          task.wait(1)
+                          task.wait(1.5) -- Đợi nhân vật ổn định sau khi hồi sinh
                           smartReset(bestGroupIndex, bestGroupPart)
                       end
                       task.wait(4)
@@ -162,6 +165,7 @@ Tab:CreateToggle({
 -- [TAB MISC]
 MiscTab:CreateSection("Tiện ích & Tối ưu")
 
+-- Chức năng xóa MVP An toàn (Chỉ xóa Humanoid Model, không xóa Camera hệ thống)
 MiscTab:CreateToggle({
    Name = "Safe Clear MVP Models",
    CurrentValue = false,
@@ -174,13 +178,14 @@ MiscTab:CreateToggle({
                       local mvpPos = workspace.Scene.SafeIsland.DuelLobby.WinnerTable.MVPPos
                       for _, container in pairs(mvpPos:GetChildren()) do
                           for _, item in pairs(container:GetChildren()) do
+                              -- Chỉ xóa nếu là Model nhân vật (có Humanoid)
                               if item:IsA("Model") and item:FindFirstChildOfClass("Humanoid") then
                                   item:Destroy()
                               end
                           end
                       end
                   end)
-                  task.wait(5)
+                  task.wait(5) -- Quét giãn cách để chống lag
               end
           end)
       end
