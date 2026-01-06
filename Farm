@@ -1,17 +1,8 @@
--- [LOG SILENCER - Chặn thông báo rác để đỡ lag]
-local LogService = game:GetService("LogService")
-local function silenceWarning(message, messageType)
-    if messageType == Enum.MessageType.MessageWarning and string.find(message:lower(), "unsupported") then
-        return -- Chặn không cho hiện các cảnh báo unsupported
-    end
-end
--- Lưu ý: Một số Executor không cho phép can thiệp LogService, nhưng đây là cách tối ưu nhất.
-
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
-   Name = "Duel Warriors: Ultimate Sync v11",
-   LoadingTitle = "Đang tối ưu hóa hệ thống...",
+   Name = "Duel Warriors: Instant Sync v15",
+   LoadingTitle = "Đang cấu hình quét phòng siêu tốc...",
    ConfigurationSaving = { Enabled = false }
 })
 
@@ -31,7 +22,6 @@ game:GetService("Players").LocalPlayer.Idled:Connect(function()
     VirtualUser:ClickButton2(Vector2.new())
 end)
 
--- Hàm lấy danh sách người chơi
 local function getPlayerNames()
     local names = {}
     for _, player in pairs(game.Players:GetPlayers()) do
@@ -55,9 +45,9 @@ Tab:CreateButton({
 
 Tab:CreateSection("Chế độ Win/Lose")
 
--- 1. LOGIC CHO MÁY WIN
+-- 1. LOGIC CHO MÁY WIN (Siêu tốc 0.05s)
 Tab:CreateToggle({
-   Name = "Auto Win (Dynamic TP)",
+   Name = "Auto Win (Instant Follow)",
    CurrentValue = false,
    Callback = function(Value)
       autoWin = Value
@@ -70,25 +60,26 @@ Tab:CreateToggle({
                       local oppPos = targetPlayer.Character.HumanoidRootPart.Position
                       for i = 1, 6 do
                           local group = workspace.Scene.Function.DuelEnter["1V1Group"..i]
-                          if (oppPos - group.TransPos2.Position).Magnitude < 8 then
+                          -- Phản hồi ngay lập tức khi thấy B ở cổng
+                          if (oppPos - group.TransPos2.Position).Magnitude < 10 then
                               game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame = group.TransPos1.CFrame
                               break
-                          elseif (oppPos - group.TransPos1.Position).Magnitude < 8 then
+                          elseif (oppPos - group.TransPos1.Position).Magnitude < 10 then
                               game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame = group.TransPos2.CFrame
                               break
                           end
                       end
                   end
-                  task.wait(1)
+                  task.wait(0.05) -- Tốc độ quét cao nhất
               end
           end)
       end
    end,
 })
 
--- 2. LOGIC CHO MÁY LOSE
+-- 2. LOGIC CHO MÁY LOSE (1s Jump Room Logic)
 Tab:CreateToggle({
-   Name = "Auto Lose (2 Rounds + Safe Reset)",
+   Name = "Auto Lose (1s Jump Room)",
    CurrentValue = false,
    Callback = function(Value)
       autoLose = Value
@@ -100,13 +91,14 @@ Tab:CreateToggle({
                   local bestGroupIndex = nil
                   local bestGroupPart = nil
                   
+                  -- Quét phòng trống nhanh
                   for i = 1, 6 do
                       local group = workspace.Scene.Function.DuelEnter["1V1Group"..i]
                       local isBusy = false
                       for _, p in pairs(game.Players:GetPlayers()) do
                           if p ~= lp and p.Name ~= opponentName and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-                              if (p.Character.HumanoidRootPart.Position - group.TransPos2.Position).Magnitude < 5 or 
-                                 (p.Character.HumanoidRootPart.Position - group.TransPos1.Position).Magnitude < 5 then
+                              if (p.Character.HumanoidRootPart.Position - group.TransPos1.Position).Magnitude < 6 or 
+                                 (p.Character.HumanoidRootPart.Position - group.TransPos2.Position).Magnitude < 6 then
                                   isBusy = true break
                               end
                           end
@@ -119,37 +111,47 @@ Tab:CreateToggle({
                       
                       local function smartReset(index, groupPart)
                           local floor = workspace.Map.MatchDuel.DuelArena["1V1No"..index].Floor
-                          local timeout = 0
+                          local waitStart = 0
+                          
                           while autoLose do
                               if lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") then
                                   local myPos = lp.Character.HumanoidRootPart.Position
+                                  
+                                  -- Nếu đã vào trận thành công
                                   if (myPos - floor.Position).Magnitude < 80 then
-                                      task.wait(0.5)
-                                      if lp.Character:FindFirstChild("Humanoid") then lp.Character.Humanoid.Health = 0 end
-                                      return true
+                                      task.wait(0.3)
+                                      local hum = lp.Character:FindFirstChildOfClass("Humanoid")
+                                      if hum then hum.Health = 0 end
+                                      return "entered"
                                   end
-                                  if timeout > 5 then
-                                      if (myPos - groupPart.TransPos2.Position).Magnitude < 10 or (myPos - groupPart.TransPos1.Position).Magnitude < 10 then
-                                          if lp.Character:FindFirstChild("Humanoid") then lp.Character.Humanoid.Health = 0 end
-                                          return true
+                                  
+                                  -- LOGIC MỚI: Nếu đứng ở cổng quá 1 giây mà chưa vào trận -> Bỏ phòng, tìm phòng khác
+                                  if (myPos - groupPart.TransPos2.Position).Magnitude < 10 then
+                                      waitStart = waitStart + 0.1
+                                      if waitStart > 1.2 then -- Quá 1.2s không thấy Teleport vào sàn
+                                          return "jump" 
                                       end
                                   end
                               end
-                              task.wait(0.5)
-                              timeout = timeout + 0.5
-                              if timeout > 25 then return false end
+                              task.wait(0.1)
                           end
                       end
 
-                      if smartReset(bestGroupIndex, bestGroupPart) then
-                          task.wait(2)
-                          local char = lp.Character or lp.CharacterAdded:Wait()
+                      local result = smartReset(bestGroupIndex, bestGroupPart)
+                      
+                      if result == "entered" then
+                          -- Nếu hiệp 1 thành công, làm tiếp hiệp 2
                           task.wait(1.5)
+                          local char = lp.Character or lp.CharacterAdded:Wait()
+                          task.wait(1.2)
                           smartReset(bestGroupIndex, bestGroupPart)
+                          task.wait(3)
+                      elseif result == "jump" then
+                          -- Nếu bị kẹt quá 1s, vòng lặp while sẽ tự chạy lại để tìm groupIndex mới
+                          task.wait(0.1)
                       end
-                      task.wait(4)
                   end
-                  task.wait(2)
+                  task.wait(0.5)
               end
           end)
       end
@@ -157,10 +159,8 @@ Tab:CreateToggle({
 })
 
 -- [TAB MISC]
-MiscTab:CreateSection("Tiện ích & Tối ưu")
-
 MiscTab:CreateToggle({
-   Name = "Auto Clear MVP (Every 30s)",
+   Name = "Auto Clear MVP (30s)",
    CurrentValue = false,
    Callback = function(Value)
       autoClearMVP = Value
