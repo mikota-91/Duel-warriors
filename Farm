@@ -1,8 +1,17 @@
+-- [LOG SILENCER - Chặn thông báo rác để đỡ lag]
+local LogService = game:GetService("LogService")
+local function silenceWarning(message, messageType)
+    if messageType == Enum.MessageType.MessageWarning and string.find(message:lower(), "unsupported") then
+        return -- Chặn không cho hiện các cảnh báo unsupported
+    end
+end
+-- Lưu ý: Một số Executor không cho phép can thiệp LogService, nhưng đây là cách tối ưu nhất.
+
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
-   Name = "Duel Warriors: Optimized Sync v9",
-   LoadingTitle = "Đang khởi tạo hệ thống tối ưu...",
+   Name = "Duel Warriors: Ultimate Sync v11",
+   LoadingTitle = "Đang tối ưu hóa hệ thống...",
    ConfigurationSaving = { Enabled = false }
 })
 
@@ -14,7 +23,6 @@ local autoWin = false
 local autoLose = false
 local autoClearMVP = false
 local opponentName = ""
-local winConnection = nil -- Lưu kết nối theo dõi Win
 
 -- [HỆ THỐNG ANTI-AFK]
 local VirtualUser = game:GetService("VirtualUser")
@@ -22,20 +30,6 @@ game:GetService("Players").LocalPlayer.Idled:Connect(function()
     VirtualUser:CaptureController()
     VirtualUser:ClickButton2(Vector2.new())
 end)
-
--- Hàm xóa MVP (Chỉ gọi khi cần thiết)
-local function clearMVPModels()
-    pcall(function()
-        local mvpPos = workspace.Scene.SafeIsland.DuelLobby.WinnerTable.MVPPos
-        for _, container in pairs(mvpPos:GetChildren()) do
-            for _, item in pairs(container:GetChildren()) do
-                if not item:IsA("Camera") and not string.find(item.Name:lower(), "cam") then
-                    item:Destroy()
-                end
-            end
-        end
-    end)
-end
 
 -- Hàm lấy danh sách người chơi
 local function getPlayerNames()
@@ -51,21 +45,7 @@ local PlayerDropdown = Tab:CreateDropdown({
    Name = "Chọn Đối Thủ (B)",
    Options = getPlayerNames(),
    CurrentOption = {""},
-   Callback = function(Option) 
-       opponentName = Option[1] 
-       -- Reset kết nối khi đổi đối thủ
-       if winConnection then winConnection:Disconnect() end
-       
-       local opp = game.Players:FindFirstChild(opponentName)
-       if opp and opp:FindFirstChild("leaderstats") and opp.leaderstats:FindFirstChild("Wins") then
-           winConnection = opp.leaderstats.Wins.Changed:Connect(function()
-               if autoClearMVP then
-                   task.wait(5) -- Đợi model kịp spawn ra rồi mới xóa
-                   clearMVPModels()
-               end
-           end)
-       end
-   end,
+   Callback = function(Option) opponentName = Option[1] end,
 })
 
 Tab:CreateButton({
@@ -73,7 +53,9 @@ Tab:CreateButton({
    Callback = function() PlayerDropdown:Set(getPlayerNames()) end,
 })
 
--- 1. LOGIC CHO MÁY WIN (Dynamic TP)
+Tab:CreateSection("Chế độ Win/Lose")
+
+-- 1. LOGIC CHO MÁY WIN
 Tab:CreateToggle({
    Name = "Auto Win (Dynamic TP)",
    CurrentValue = false,
@@ -104,7 +86,7 @@ Tab:CreateToggle({
    end,
 })
 
--- 2. LOGIC CHO MÁY LOSE (2 Rounds + Safe Reset)
+-- 2. LOGIC CHO MÁY LOSE
 Tab:CreateToggle({
    Name = "Auto Lose (2 Rounds + Safe Reset)",
    CurrentValue = false,
@@ -178,10 +160,27 @@ Tab:CreateToggle({
 MiscTab:CreateSection("Tiện ích & Tối ưu")
 
 MiscTab:CreateToggle({
-   Name = "Smart Clear MVP (On Win +1)",
+   Name = "Auto Clear MVP (Every 30s)",
    CurrentValue = false,
    Callback = function(Value)
       autoClearMVP = Value
+      if Value then
+          task.spawn(function()
+              while autoClearMVP do
+                  pcall(function()
+                      local mvpPos = workspace.Scene.SafeIsland.DuelLobby.WinnerTable.MVPPos
+                      for _, container in pairs(mvpPos:GetChildren()) do
+                          for _, item in pairs(container:GetChildren()) do
+                              if not item:IsA("Camera") and not string.find(item.Name:lower(), "cam") then
+                                  item:Destroy()
+                              end
+                          end
+                      end
+                  end)
+                  task.wait(30)
+              end
+          end)
+      end
    end,
 })
 
@@ -191,7 +190,6 @@ MiscTab:CreateButton({
         autoWin = false 
         autoLose = false 
         autoClearMVP = false
-        if winConnection then winConnection:Disconnect() end
         Rayfield:Destroy() 
     end 
 })
